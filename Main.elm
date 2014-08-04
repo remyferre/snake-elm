@@ -8,10 +8,23 @@ maxHeight  = 400
 delta : Signal Time
 delta = inSeconds <~ fps 35
 
-type Input = { up: Int, down: Int, delta: Time }
+data Direction = Up | Down | Left | Right
+direction : Int -> Direction
+direction keyCode = case keyCode of
+                      37 -> Left
+                      38 -> Up
+                      39 -> Right
+                      40 -> Down
 
-input = sampleOn delta (Input <~ lift .x Keyboard.arrows
-                               ~ lift .y Keyboard.arrows
+isArrow : Int -> Bool
+isArrow k = k >= 37 && k <= 40
+
+lastPressedArrow : Signal Int
+lastPressedArrow = keepIf isArrow 37 Keyboard.lastPressed
+
+type Input = { direction: Direction, delta: Time }
+
+input = sampleOn delta (Input <~ lift direction lastPressedArrow
                                ~ delta)
 
 type Object = { x: Float, y: Float }
@@ -21,11 +34,20 @@ initGame : Game
 initGame = { snake = { x = 0, y = 0 } }
 
 stepSnake : Input -> Object -> Object
-stepSnake { up, down, delta } { x, y } =
-    { x = x + 5*(toFloat up), y = y + 5*(toFloat down) }
+stepSnake { direction, delta } { x, y } =
+    let x' = x + toFloat 5 * case direction of
+                               Left  -> -1
+                               Right ->  1
+                               _     ->  0
+        y' = y + toFloat 5 * case direction of
+                               Up   ->  1
+                               Down -> -1
+                               _    ->  0
+    in
+      { x = x', y = y' }
 
 stepGame : Input -> Game -> Game
-stepGame ({ up, down, delta } as input) { snake } =
+stepGame ({ direction, delta } as input) { snake } =
     let hasLost = snake.x - snakeWidth / 2 < -(maxWidth  / 2) ||
                   snake.x + snakeWidth / 2 >   maxWidth  / 2  ||
                   snake.y - snakeWidth / 2 < -(maxHeight / 2) ||
