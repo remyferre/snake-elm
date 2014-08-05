@@ -62,7 +62,7 @@ collideWalls { positions } =
 collideSnake : Snake -> Bool
 collideSnake { positions } =
     let (x, y)   = last positions
-        otherPos = tail <| reverse positions
+        otherPos = tail <| reverse (tail positions)
     in
       any (\(x', y') -> x == x' && y == y') otherPos
 
