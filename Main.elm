@@ -50,15 +50,28 @@ stepSnake { direction, delta } { positions } =
     in
       { positions = (drop 1 positions) ++ [(x', y')] }
 
+collideWalls : Snake -> Bool
+collideWalls { positions } =
+    let (x, y) = last positions
+    in
+      x - snakeWidth / 2 < -(maxWidth  / 2) ||
+      x + snakeWidth / 2 >   maxWidth  / 2  ||
+      y - snakeWidth / 2 < -(maxHeight / 2) ||
+      y + snakeWidth / 2 >   maxHeight / 2
+
+collideSnake : Snake -> Bool
+collideSnake { positions } =
+    let (x, y)   = last positions
+        otherPos = tail <| reverse positions
+    in
+      any (\(x', y') -> x == x' && y == y') otherPos
+
 stepGame : Input -> Game -> Game
 stepGame ({ direction, delta } as input) { snake } =
-    let (x, y) = last snake.positions
-        hasLost = x - snakeWidth / 2 < -(maxWidth  / 2) ||
-                  x + snakeWidth / 2 >   maxWidth  / 2  ||
-                  y - snakeWidth / 2 < -(maxHeight / 2) ||
-                  y + snakeWidth / 2 >   maxHeight / 2
-    in
-      if hasLost then initGame else { snake = stepSnake input snake }
+    if collideWalls snake || collideSnake snake then
+        initGame
+    else
+        { snake = stepSnake input snake }
 
 gameState : Signal Game
 gameState = foldp stepGame initGame input
