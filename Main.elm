@@ -27,47 +27,59 @@ type Input = { direction: Direction, delta: Time }
 input = sampleOn delta (Input <~ lift direction lastPressedArrow
                                ~ delta)
 
-type Object = { x: Float, y: Float }
-type Game = { snake: Object }
+type Snake = { positions: [(Float, Float)] }
+type Game = { snake: Snake }
 
 initGame : Game
-initGame = { snake = { x = snakeWidth/2, y = snakeWidth/2 } }
+initGame = { snake = { positions = map
+                                   (\i -> (snakeWidth/2 + i * -snakeWidth,
+                                           snakeWidth/2))
+                                   [-5..5] } }
 
-stepSnake : Input -> Object -> Object
-stepSnake { direction, delta } { x, y } =
-    let x' = x + toFloat snakeWidth * case direction of
-                                        Left  -> -1
-                                        Right ->  1
-                                        _     ->  0
-        y' = y + toFloat snakeWidth * case direction of
-                                        Up   ->  1
-                                        Down -> -1
-                                        _    ->  0
+stepSnake : Input -> Snake -> Snake
+stepSnake { direction, delta } { positions } =
+    let (x, y) = last positions
+        x' = x + snakeWidth * case direction of
+                                Left  -> -1
+                                Right ->  1
+                                _     ->  0
+        y' = y + snakeWidth * case direction of
+                                Up   ->  1
+                                Down -> -1
+                                _    ->  0
     in
-      { x = x', y = y' }
+      { positions = (drop 1 positions) ++ [(x', y')] }
 
 stepGame : Input -> Game -> Game
 stepGame ({ direction, delta } as input) { snake } =
-    let hasLost = snake.x - snakeWidth / 2 < -(maxWidth  / 2) ||
-                  snake.x + snakeWidth / 2 >   maxWidth  / 2  ||
-                  snake.y - snakeWidth / 2 < -(maxHeight / 2) ||
-                  snake.y + snakeWidth / 2 >   maxHeight / 2
+    let (x, y) = last snake.positions
+        hasLost = x - snakeWidth / 2 < -(maxWidth  / 2) ||
+                  x + snakeWidth / 2 >   maxWidth  / 2  ||
+                  y - snakeWidth / 2 < -(maxHeight / 2) ||
+                  y + snakeWidth / 2 >   maxHeight / 2
     in
       if hasLost then initGame else { snake = stepSnake input snake }
 
 gameState : Signal Game
 gameState = foldp stepGame initGame input
 
-displayObj : Object -> Shape -> Form
-displayObj obj shape =
-    move (obj.x, obj.y) (filled white shape)
+displaySnake : Snake -> Form
+displaySnake { positions } =
+    let style = { color = white
+                , width = snakeWidth
+                , cap = Flat
+                , join = Sharp 10
+                , dashOffset = 0
+                , dashing = [] }
+    in
+      traced style (path positions)
 
 display : (Int, Int) -> Game -> Element
 display (w, h) { snake } =
     container w h middle <| collage maxWidth maxHeight
                 [
                   filled black (rect maxWidth maxHeight)
-                , displayObj snake (rect snakeWidth snakeWidth)
+                , displaySnake snake
                 ]
 
 main = lift2 display Window.dimensions gameState
