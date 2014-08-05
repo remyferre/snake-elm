@@ -1,12 +1,12 @@
 import Keyboard
 import Window
 
-snakeWidth = 15
-maxWidth   = 600
-maxHeight  = 400
+snakeWidth = 16
+maxWidth   = snakeWidth * 40
+maxHeight  = snakeWidth * 26
 
 delta : Signal Time
-delta = inSeconds <~ fps 35
+delta = inSeconds <~ fps 10
 
 data Direction = Up | Down | Left | Right
 direction : Int -> Direction
@@ -31,18 +31,18 @@ type Object = { x: Float, y: Float }
 type Game = { snake: Object }
 
 initGame : Game
-initGame = { snake = { x = 0, y = 0 } }
+initGame = { snake = { x = snakeWidth/2, y = snakeWidth/2 } }
 
 stepSnake : Input -> Object -> Object
 stepSnake { direction, delta } { x, y } =
-    let x' = x + toFloat 5 * case direction of
-                               Left  -> -1
-                               Right ->  1
-                               _     ->  0
-        y' = y + toFloat 5 * case direction of
-                               Up   ->  1
-                               Down -> -1
-                               _    ->  0
+    let x' = x + toFloat snakeWidth * case direction of
+                                        Left  -> -1
+                                        Right ->  1
+                                        _     ->  0
+        y' = y + toFloat snakeWidth * case direction of
+                                        Up   ->  1
+                                        Down -> -1
+                                        _    ->  0
     in
       { x = x', y = y' }
 
@@ -60,13 +60,13 @@ gameState = foldp stepGame initGame input
 
 displayObj : Object -> Shape -> Form
 displayObj obj shape =
-    move (obj.x, obj.y) (filled (rgb 60 200 60) shape)
+    move (obj.x, obj.y) (filled white shape)
 
 display : (Int, Int) -> Game -> Element
 display (w, h) { snake } =
     container w h middle <| collage maxWidth maxHeight
                 [
-                  filled grey (rect maxWidth maxHeight)
+                  filled black (rect maxWidth maxHeight)
                 , displayObj snake (rect snakeWidth snakeWidth)
                 ]
 
