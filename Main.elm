@@ -1,12 +1,21 @@
 import Keyboard
 import Window
+import Random
 
 snakeWidth = 16
-maxWidth   = snakeWidth * 40
-maxHeight  = snakeWidth * 26
+columns    = 42
+rows       = 26
+maxWidth   = snakeWidth * columns
+maxHeight  = snakeWidth * rows
 
 delta : Signal Time
 delta = inSeconds <~ fps 10
+
+randX : Signal Int
+randX = Random.range (round <| columns/ -2) ((round <| columns/2)-1) delta
+
+randY : Signal Int
+randY = Random.range (round <| rows/ -2) ((round <| rows/2)-1) delta
 
 data Direction = Up | Down | Left | Right
 direction : Int -> Direction
@@ -30,13 +39,20 @@ isArrow k = k >= 37 && k <= 40
 lastPressedArrow : Signal Int
 lastPressedArrow = keepIf isArrow 37 Keyboard.lastPressed
 
-type Input = { direction: Direction, delta: Time }
+type Input = { direction: Direction, delta: Time, randX: Int, randY: Int }
 
 input = sampleOn delta (Input <~ lift direction lastPressedArrow
-                               ~ delta)
+                               ~ delta
+                               ~ randX
+                               ~ randY)
 
 type Snake = { positions: [(Float, Float)], dir: Direction }
-type Game = { snake: Snake }
+type Game = { snake: Snake, fruit: (Float, Float) }
+
+newFruit : Int -> Int -> (Float, Float)
+newFruit randX randY =
+    (snakeWidth/2 + (toFloat <| snakeWidth * randX),
+     snakeWidth/2 + (toFloat <| snakeWidth * randY))
 
 initGame : Game
 initGame = { snake = { positions = map
@@ -45,6 +61,7 @@ initGame = { snake = { positions = map
                                    [-5..5]
                      , dir = Left
                      }
+           , fruit = newFruit 0 0
            }
 
 stepSnake : Input -> Snake -> Snake
@@ -60,7 +77,7 @@ stepSnake { direction, delta } { positions, dir } =
                                 Down -> -1
                                 _    ->  0
     in
-      { positions = (drop 1 positions) ++ [(x', y')], dir = dir' }
+      { positions = positions ++ [(x', y')], dir = dir' }
 
 collideWalls : Snake -> Bool
 collideWalls { positions, dir } =
@@ -79,11 +96,18 @@ collideSnake { positions, dir } =
       any (\(x', y') -> x == x' && y == y') otherPos
 
 stepGame : Input -> Game -> Game
-stepGame ({ direction, delta } as input) { snake } =
+stepGame ({ direction, delta, randX, randY } as input) { snake, fruit } =
     if collideWalls snake || collideSnake snake then
         initGame
     else
-        { snake = stepSnake input snake }
+        let snake'   = stepSnake input snake
+            eatFruit = (last snake'.positions) == fruit
+        in
+          if eatFruit then
+             { snake = snake', fruit = newFruit randX randY }
+          else
+              { snake = { snake' | positions <- drop 1 snake'.positions }
+              , fruit = fruit }
 
 gameState : Signal Game
 gameState = foldp stepGame initGame input
@@ -99,12 +123,17 @@ displaySnake { positions, dir } =
     in
       traced style (path positions)
 
+displayFruit : (Float, Float) -> Form
+displayFruit (x, y) =
+    move (x, y) <| filled red (rect snakeWidth snakeWidth)
+
 display : (Int, Int) -> Game -> Element
-display (w, h) { snake } =
+display (w, h) { snake, fruit } =
     container w h middle <| collage maxWidth maxHeight
                 [
                   filled black (rect maxWidth maxHeight)
                 , displaySnake snake
+                , displayFruit fruit
                 ]
 
 main = lift2 display Window.dimensions gameState
