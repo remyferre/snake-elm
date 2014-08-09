@@ -49,20 +49,32 @@ input = sampleOn delta (Input <~ lift direction lastPressedArrow
 type Snake = { positions: [(Float, Float)], dir: Direction }
 type Game = { snake: Snake, fruit: (Float, Float) }
 
-newFruit : Int -> Int -> (Float, Float)
-newFruit randX randY =
-    (snakeWidth/2 + (toFloat <| snakeWidth * randX),
-     snakeWidth/2 + (toFloat <| snakeWidth * randY))
+validFruit : (Float, Float) -> [(Float, Float)] -> (Float, Float)
+validFruit (randX, randY) positions =
+    if any (\(x, y) -> (x,y) == (randX, randY)) positions then
+        if randX + snakeWidth > maxWidth/2 then
+            if randY + snakeWidth > maxHeight/2 then
+                validFruit (snakeWidth/2 - maxWidth/2, snakeWidth/2 - maxHeight/2) positions
+            else
+                validFruit (snakeWidth/2 - maxWidth/2, randY + snakeWidth) positions
+        else
+            validFruit (randX + snakeWidth, randY) positions
+    else
+        (randX, randY)
+
+newFruit : Int -> Int -> [(Float, Float)] -> (Float, Float)
+newFruit randX randY positions =
+    let x = snakeWidth/2 + (toFloat <| snakeWidth * randX)
+        y = snakeWidth/2 + (toFloat <| snakeWidth * randY)
+    in validFruit (x, y) positions
 
 initGame : Game
-initGame = { snake = { positions = map
-                                   (\i -> (snakeWidth/2 + i * -snakeWidth,
-                                           snakeWidth/2))
-                                   [-5..5]
-                     , dir = Left
-                     }
-           , fruit = newFruit 0 0
-           }
+initGame =
+    let positions =  map (\i -> (snakeWidth/2 + i * -snakeWidth,
+                                 snakeWidth/2)) [-5..5]
+    in { snake = { positions = positions
+                 , dir = Left }
+       , fruit = newFruit 0 0 positions }
 
 stepSnake : Input -> Snake -> Snake
 stepSnake { direction, delta } { positions, dir } =
@@ -104,7 +116,7 @@ stepGame ({ direction, delta, randX, randY } as input) { snake, fruit } =
             eatFruit = (last snake'.positions) == fruit
         in
           if eatFruit then
-             { snake = snake', fruit = newFruit randX randY }
+             { snake = snake', fruit = newFruit randX randY snake'.positions}
           else
               { snake = { snake' | positions <- drop 1 snake'.positions }
               , fruit = fruit }
