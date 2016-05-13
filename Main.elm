@@ -1,191 +1,239 @@
+import Html exposing (..)
+import Html.App
+import Html.Events exposing (on, keyCode)
 import Keyboard
-import Window
+import Char
 import Random
+import Window
+import Task
+import Time exposing (Time, millisecond)
+import Color
+import Element
+import Collage
+
+--- List basics
+
+last : List a -> Maybe a
+last list = case list of
+              []    -> Nothing 
+              x::[] -> Just x
+              x::xs -> last xs
 
 --- CONSTANTS
 
-snakeWidth = 16
 columns    = 42
 rows       = 26
+snakeWidth = 16
 width      = snakeWidth * columns
 height     = snakeWidth * rows
-maxX       = (toFloat width)  / 2
-maxY       = (toFloat height) / 2
-
---- INPUT
-
-type Input = { direction: Direction, delta: Time, randX: Int, randY: Int }
-
--- Key
-isArrow : Int -> Bool
-isArrow k = k >= 37 && k <= 40
-
-lastPressedArrow : Signal Int
-lastPressedArrow = keepIf isArrow 37 Keyboard.lastPressed
-
--- Direction
-data Direction = Up | Down | Left | Right
-
-direction : Int -> Direction
-direction keyCode = case keyCode of
-                      37 -> Left
-                      38 -> Up
-                      39 -> Right
-                      40 -> Down
-
-opposite : Direction -> Direction -> Bool
-opposite d1 d2 = case (d1, d2) of
-                   (Left,Right) -> True
-                   (Right,Left) -> True
-                   (Up,Down)    -> True
-                   (Down,Up)    -> True
-                   _            -> False
-
-lastDirection : Signal Direction
-lastDirection = direction <~ lastPressedArrow
-
--- Random ints to generate new fruit position
-randCoord : Float -> Signal Int
-randCoord range =
-    let mid = round <| (range / 2)
-        min = -mid
-        max = mid-1
-    in
-      Random.range min max delta
-
-randX = randCoord columns
-randY = randCoord rows
 
 --- MODEL
 
--- Helpers about coordinates
-toCoord : (Int, Int) -> (Float, Float)
-toCoord (x, y) = (snakeWidth/2 + (toFloat x) * snakeWidth,
-                  snakeWidth/2 + (toFloat y) * snakeWidth)
+-- Positions
+type alias Pos = (Int, Int)
 
-nextCoord : Float -> Float -> Float
-nextCoord coord max =
-    let coord' = coord + snakeWidth
-    in
-      if coord' > max then snakeWidth/2 - max else coord'
+nextPos : Int -> Int -> Int 
+nextPos pos maxpos = if pos == maxpos then 0 else pos + 1 
 
-right : Float -> Float
-right x = nextCoord x maxX
+up : Int -> Int
+up x = nextPos x columns
 
-up : Float -> Float
-up y = nextCoord y maxY
+right : Int -> Int
+right y = nextPos y rows
 
+randPos : Random.Generator Pos
+randPos = Random.pair (Random.int 0 (columns-1)) (Random.int 0 (rows-1))
+    
+-- Direction
+type Direction = Up | Down | Left | Right
+
+opposite : Direction -> Direction -> Bool
+opposite d1 d2 =
+    case (d1, d2) of
+      (Left,Right) -> True
+      (Right,Left) -> True
+      (Up,Down)    -> True
+      (Down,Up)    -> True
+      _            -> False    
+ 
 -- Fruit
-validFruit : (Float, Float) -> [(Float, Float)] -> (Float, Float)
-validFruit (randX, randY) positions =
-    if any (\(x, y) -> (x, y) == (randX, randY)) positions then
-        let overflow = randX + snakeWidth > maxX
-            randX' = right randX
-            randY' = up    randY
+validFruit : Pos -> List Pos -> Pos
+validFruit fruit positions =
+    if List.any (\snake -> snake == fruit) positions then
+        let (fruitx , fruity ) = fruit
+            (fruitx', fruity') = (right fruitx, up fruity)  
+            overflow = fruitx == columns
+            pos'     = (fruitx', if overflow then fruity' else fruity)
         in
-          validFruit (if overflow then (randX', randY') else (randX', randY)) positions
+          validFruit pos' positions
     else
-        (randX, randY)
-
-newFruit : Int -> Int -> [(Float, Float)] -> (Float, Float)
-newFruit randX randY positions =
-    validFruit (toCoord (randX, randY)) positions
+        fruit
 
 -- Snake
-type Snake = { positions: [(Float, Float)], dir: Direction }
+type alias Snake = { positions: List Pos, dir: Direction }
 
-stepSnake : Input -> Snake -> Snake
-stepSnake { direction, delta } { positions, dir } =
-    let dir' = if opposite direction dir then dir else direction
-        (x, y) = last positions
-        x' = x + snakeWidth * case dir' of
-                                Left  -> -1
-                                Right ->  1
-                                _     ->  0
-        y' = y + snakeWidth * case dir' of
-                                Up   ->  1
-                                Down -> -1
-                                _    ->  0
-    in
-      { positions = positions ++ [(x', y')], dir = dir' }
+stepSnake : Snake -> Snake
+stepSnake { positions, dir } =
+    let snakeHead = last positions
+    in 
+      case snakeHead of
+        Just (x, y) ->
+            let x' = x + case dir of
+                           Left  -> -1
+                           Right ->  1
+                           _     ->  0
+                y' = y + case dir of
+                           Up   ->  1
+                           Down -> -1
+                           _    ->  0
+            in
+              { positions = positions ++ [(x', y')], dir = dir }
+        Nothing -> { positions = positions, dir = dir } 
 
 collideWalls : Snake -> Bool
 collideWalls { positions, dir } =
-    let (x, y) = last positions
+    let snakeHead = last positions
     in
-      x - snakeWidth / 2 < -maxX ||
-      x + snakeWidth / 2 >  maxX ||
-      y - snakeWidth / 2 < -maxY ||
-      y + snakeWidth / 2 >  maxY
+      case snakeHead of 
+        Just (x, y) -> 
+            x < 0       ||
+            x > columns ||
+            y < 0       ||
+            y > rows
+        Nothing -> False
 
 collideSnake : Snake -> Bool
 collideSnake { positions, dir } =
-    let (x, y)   = last positions
-        otherPos = tail <| reverse (tail positions)
-    in
-      any (\(x', y') -> (x', y') == (x, y)) otherPos
+    let snakeHead = last positions
+        otherPos  = List.drop 1 <| List.take (List.length positions - 1) positions
+    in 
+      case snakeHead of
+        Just head -> List.any (\body -> body == head) otherPos
+        Nothing   -> False
+
+eatFruit : Snake -> Pos -> Bool
+eatFruit { positions, dir } fruit =
+    let snakeHead = last positions
+    in case snakeHead of
+         Just head -> head == fruit
+         Nothing   -> False 
 
 -- Game
-type Game = { snake: Snake, fruit: (Float, Float) }
+type alias Game = { snake: Snake, fruit: Pos, window: Window.Size }
 
-initGame : Game
-initGame =
-    let positions =  reverse <| map (\i -> toCoord (i, 0)) [-5..5]
-    in { snake = { positions = positions
-                 , dir = Left }
-       , fruit = newFruit 0 0 positions }
+init : (Game, Cmd Msg)
+init =
+    let
+        middle    = (\max -> round <| max / 2)
+        midX      = middle columns
+        midY      = middle rows
+        positions = List.map (\i -> (i, midY)) <| List.reverse [midX-5..midX+3]
+        game = { snake = { positions = positions, dir = Left }
+               , fruit = (-1, -1)
+               , window = { width = 0, height = 0} }  
+    in (game, Cmd.batch [ Random.generate NewFruit randPos
+                        , Task.perform (\err -> NoOp) (\size -> SetSize size) Window.size])
 
-stepGame : Input -> Game -> Game
-stepGame ({ direction, delta, randX, randY } as input) { snake, fruit } =
-    if collideWalls snake || collideSnake snake then
-        initGame
-    else
-        let snake'   = stepSnake input snake
-            eatFruit = (last snake'.positions) == fruit
-        in
-          if eatFruit then
-             { snake = snake', fruit = newFruit randX randY snake'.positions}
+-- UPDATE
+
+type Msg = Tick Time | ChangeDirection Direction | NewFruit Pos | SetSize Window.Size | NoOp 
+
+direction : Int -> Msg 
+direction keyCode =
+    case keyCode of
+      37 -> ChangeDirection Left
+      38 -> ChangeDirection Up
+      39 -> ChangeDirection Right
+      40 -> ChangeDirection Down
+      _  -> NoOp
+
+update : Msg -> Game -> (Game, Cmd Msg)
+update msg model =
+    case msg of
+    
+      Tick _ ->
+          if collideWalls model.snake || collideSnake model.snake then
+              init
           else
-              { snake = { snake' | positions <- drop 1 snake'.positions }
-              , fruit = fruit }
+              let snake' = stepSnake model.snake
+              in
+                if eatFruit snake' model.fruit then
+                    ({model | snake = snake'}, Random.generate NewFruit randPos)
+                else
+                    ({ model | snake = { snake' | positions = List.drop 1 snake'.positions }}, Cmd.none)
+  
+      ChangeDirection direction -> 
+          let direction' = 
+                  if opposite direction model.snake.dir 
+                  then model.snake.dir 
+                  else direction
+              snake = model.snake
+          in
+            ({ model | snake = { snake | dir = direction'}}, Cmd.none)
+    
+      NewFruit pos -> 
+          ({ model | fruit = validFruit pos model.snake.positions }, Cmd.none)
 
---- DISPLAY
+      SetSize windowSize -> 
+          ({ model | window = windowSize }, Cmd.none)
 
-displaySnake : Snake -> Form
+      NoOp -> (model, Cmd.none)
+
+
+subscriptions : Game -> Sub Msg
+subscriptions model =
+    Sub.batch [ Time.every (100 * millisecond) Tick
+              , Keyboard.presses direction
+              , Window.resizes SetSize]
+
+-- VIEW
+
+toCoord : Pos -> (Float, Float)
+toCoord (x, y) = (snakeWidth/2 + (toFloat x - (columns/2)) * snakeWidth,
+                  snakeWidth/2 + (toFloat y - (rows   /2)) * snakeWidth)
+
+displaySnake : Snake -> Collage.Form
 displaySnake { positions, dir } =
-    let style = { color = white
+    let style = { color = Color.white
                 , width = snakeWidth
-                , cap = Flat
-                , join = Sharp 10
+                , cap   = Collage.Flat
+                , join  = Collage.Sharp 10
                 , dashOffset = 0
-                , dashing = [] }
+                , dashing    = [] }
     in
-      traced style (path positions)
+      Collage.traced style (Collage.path (List.map toCoord positions))
 
-displayFruit : (Float, Float) -> Form
-displayFruit (x, y) =
-    move (x, y) <| filled red (rect snakeWidth snakeWidth)
+displayFruit : Pos -> Collage.Form
+displayFruit pos =
+    let coords = toCoord pos
+    in
+      Collage.move coords <| Collage.filled Color.red (Collage.rect snakeWidth snakeWidth)
 
-display : (Int, Int) -> Game -> Element
-display (w, h) { snake, fruit } =
-    container w h middle <| collage width height
-                [
-                 filled black (rect (toFloat width) (toFloat height))
-                , displaySnake snake
-                , displayFruit fruit
-                ]
+displayWorld : (Int, Int) -> Collage.Form
+displayWorld (w, h) = 
+    Collage.filled Color.black (Collage.rect (toFloat w) (toFloat h))
 
---- MAIN
+display : Game -> Element.Element
+display { snake, fruit, window } =
+    if window.width == 0 || fruit == (-1, -1)
+    then Element.empty
+    else
+        Element.container window.width window.height Element.middle 
+                   <| Collage.collage width height
+                          [ displayWorld (window.width, window.height)
+                          , displaySnake snake
+                          , displayFruit fruit ]
 
-delta : Signal Time
-delta = inSeconds <~ fps 9
+view : Game -> Html Msg
+view game = 
+    Html.body [] 
+              [Element.toHtml <| display game]
 
-input = sampleOn delta (Input <~ lastDirection
-                               ~ delta
-                               ~ randX
-                               ~ randY)
 
-gameState : Signal Game
-gameState = foldp stepGame initGame input
+-- MAIN
 
-main = lift2 display Window.dimensions gameState
+main =
+    Html.App.program { init = init
+                     , view = view
+                     , update = update
+                     , subscriptions = subscriptions }
