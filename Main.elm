@@ -131,7 +131,7 @@ init =
                , fruit = (-1, -1)
                , window = { width = 0, height = 0} }  
     in (game, Cmd.batch [ Random.generate NewFruit randPos
-                        , Task.perform (\size -> SetSize size) Window.size])
+                        , Task.perform SetSize Window.size])
 
 -- UPDATE
 
