@@ -1,5 +1,4 @@
 import Html exposing (..)
-import Html.App
 import Html.Events exposing (on, keyCode)
 import Keyboard
 import Char
@@ -61,11 +60,11 @@ validFruit : Pos -> List Pos -> Pos
 validFruit fruit positions =
     if List.any (\snake -> snake == fruit) positions then
         let (fruitx , fruity ) = fruit
-            (fruitx', fruity') = (right fruitx, up fruity)  
+            (fruitx_, fruity_) = (right fruitx, up fruity)
             overflow = fruitx == columns
-            pos'     = (fruitx', if overflow then fruity' else fruity)
+            pos_     = (fruitx_, if overflow then fruity_ else fruity)
         in
-          validFruit pos' positions
+          validFruit pos_ positions
     else
         fruit
 
@@ -78,16 +77,16 @@ stepSnake { positions, dir } =
     in 
       case snakeHead of
         Just (x, y) ->
-            let x' = x + case dir of
+            let x_ = x + case dir of
                            Left  -> -1
                            Right ->  1
                            _     ->  0
-                y' = y + case dir of
+                y_ = y + case dir of
                            Up   ->  1
                            Down -> -1
                            _    ->  0
             in
-              { positions = positions ++ [(x', y')], dir = dir }
+              { positions = positions ++ [(x_, y_)], dir = dir }
         Nothing -> { positions = positions, dir = dir } 
 
 collideWalls : Snake -> Bool
@@ -127,12 +126,12 @@ init =
         middle    = (\max -> round <| max / 2)
         midX      = middle columns
         midY      = middle rows
-        positions = List.map (\i -> (i, midY)) <| List.reverse [midX-5..midX+3]
+        positions = List.map (\i -> (i, midY)) <| List.reverse (List.range (midX-5) (midX+3))
         game = { snake = { positions = positions, dir = Left }
                , fruit = (-1, -1)
                , window = { width = 0, height = 0} }  
     in (game, Cmd.batch [ Random.generate NewFruit randPos
-                        , Task.perform (\err -> NoOp) (\size -> SetSize size) Window.size])
+                        , Task.perform (\size -> SetSize size) Window.size])
 
 -- UPDATE
 
@@ -155,27 +154,27 @@ update msg model =
           if collideWalls model.snake || collideSnake model.snake then
               init
           else
-              let snake' = stepSnake model.snake
+              let snake_ = stepSnake model.snake
               in
-                if eatFruit snake' model.fruit then
-                    ({model | snake = snake'}, Random.generate NewFruit randPos)
+                if eatFruit snake_ model.fruit then
+                    ({model | snake = snake_}, Random.generate NewFruit randPos)
                 else
-                    ({ model | snake = { snake' | positions = List.drop 1 snake'.positions }}, Cmd.none)
+                    ({ model | snake = { snake_ | positions = List.drop 1 snake_.positions }}, Cmd.none)
   
       ChangeDirection direction -> 
-          let direction' = 
+          let direction_ =
                   if opposite direction model.snake.dir 
                   then model.snake.dir 
                   else direction
               snake = model.snake
           in
-            ({ model | snake = { snake | dir = direction'}}, Cmd.none)
+            ({ model | snake = { snake | dir = direction_}}, Cmd.none)
     
       NewFruit pos -> 
           ({ model | fruit = validFruit pos model.snake.positions }, Cmd.none)
 
       SetSize windowSize -> 
-          ({ model | window = windowSize }, Cmd.none)
+          ({ model | window = windowSize}, Cmd.none)
 
       NoOp -> (model, Cmd.none)
 
@@ -183,7 +182,7 @@ update msg model =
 subscriptions : Game -> Sub Msg
 subscriptions model =
     Sub.batch [ Time.every (100 * millisecond) Tick
-              , Keyboard.presses direction
+              , Keyboard.downs direction
               , Window.resizes SetSize]
 
 -- VIEW
@@ -233,7 +232,7 @@ view game =
 -- MAIN
 
 main =
-    Html.App.program { init = init
-                     , view = view
-                     , update = update
-                     , subscriptions = subscriptions }
+    Html.program { init = init
+                 , view = view
+                 , update = update
+                 , subscriptions = subscriptions }
